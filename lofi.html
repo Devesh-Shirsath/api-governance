@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>API Governance Automation</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.4 system-ui,sans-serif;color:#222;background:#f6f6f7}
+header{display:flex;gap:10px;align-items:center;padding:10px 20px;background:#fff;border-bottom:1px solid #ddd;flex-wrap:wrap}
+header h1{font-size:15px;margin:0 auto 0 0}
+.pill{border:1px solid #bbb;border-radius:6px;padding:4px 10px;background:#fff;font-size:12px}
+nav{display:flex;gap:4px;padding:8px 20px 0;background:#fff;border-bottom:1px solid #ddd}
+nav button{border:0;background:none;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:13px}
+nav button.on{border-color:#4f46e5;font-weight:600}
+main{padding:16px 20px;max-width:1280px;margin:auto}
+h2{font-size:13px;margin:22px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:#555}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.card{background:#fff;border:1px solid #d6d6d6;border-radius:8px;padding:10px 14px;min-width:140px;flex:1}
+.card .l{color:#666;font-size:12px}.card .n{font-size:22px;font-weight:600}
+.card .sub{display:flex;gap:14px;font-size:12px;color:#555}.card .sub b{font-size:15px;color:#222}
+.click{cursor:pointer}.click:hover{border-color:#4f46e5}.card.on{border-color:#4f46e5;box-shadow:0 0 0 2px #c7d2fe}
+.panel{background:#fff;border:1px solid #d6d6d6;border-radius:8px;padding:14px}
+.split{display:flex;gap:24px;flex-wrap:wrap}.split>div{flex:1;min-width:280px}
+.seg{display:inline-flex;border:1px solid #bbb;border-radius:6px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:4px 12px;cursor:pointer;font-size:12px}
+.seg button.on{background:#4f46e5;color:#fff}
+.bar{display:flex;align-items:center;gap:8px;margin:7px 0;cursor:default}
+.bar .t{width:110px}.bar .tr{flex:1;background:#eee;height:14px;border-radius:3px}.bar .f{height:100%;border-radius:3px;background:#a5b4fc}
+.bar.c{cursor:pointer}.bar.c:hover .t{text-decoration:underline}.bar.dim{opacity:.35}
+.lg{display:flex;gap:12px;margin-bottom:6px}.lg button{border:0;background:none;cursor:pointer;font-size:12px;display:flex;gap:5px;align-items:center}
+.lg button.off{opacity:.4;text-decoration:line-through}.lg i{width:10px;height:10px;display:inline-block;border-radius:2px}
+.hit{fill:transparent;cursor:pointer}.hit:hover{fill:rgba(0,0,0,.05)}
+table{width:100%;border-collapse:collapse;background:#fff;font-size:12px}
+th,td{padding:6px 8px;border-bottom:1px solid #eee;text-align:left;white-space:nowrap}
+th{background:#fafafa;position:sticky;top:0}
+td.ep{color:#4338ca;cursor:pointer}td.ep:hover{text-decoration:underline}
+.tw{max-height:420px;overflow:auto;border:1px solid #d6d6d6;border-radius:8px;margin-top:10px}
+.st{padding:1px 7px;border-radius:10px;font-size:11px;background:#eee}
+.st.Processed{background:#d1fae5}.st.Failed{background:#fee2e2}.st.Skipped{background:#fef3c7}.st.Detected{background:#e0e7ff}
+.tb{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+select,input{font:inherit;padding:3px 6px;border:1px solid #bbb;border-radius:5px;background:#fff}
+.chip{background:#e0e7ff;border-radius:10px;padding:2px 8px;font-size:12px;cursor:pointer}
+#tip{position:fixed;pointer-events:none;background:#222;color:#fff;padding:6px 9px;border-radius:6px;font-size:12px;display:none;z-index:9;max-width:260px}
+#dr{position:fixed;right:0;top:0;bottom:0;width:360px;background:#fff;border-left:1px solid #bbb;padding:16px;overflow:auto;box-shadow:-4px 0 12px rgba(0,0,0,.1);z-index:5}
+#dr dt{color:#666;font-size:11px;margin-top:10px}#dr dd{margin:0;font-weight:500;word-break:break-all}
+.note{color:#777;font-size:12px}
+</style></head><body>
+<div id="app"></div><div id="tip"></div>
+<script>
+// ---------- mock data (seeded, so it is stable between reloads) ----------
+const rng=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const RUNS=Array.from({length:8},(_,i)=>{const d=new Date(2026,8,24+i);return{n:23+i,short:d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}),label:`Run ${23+i} · ${d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}, 02:48 AM`}});
+const SVC=['orders','users','payments','inventory','shipping','billing','catalog','auth'],PATHS=['items','search','status','history','summary','events','profile'],M=['GET','GET','POST','PUT','PATCH','DELETE'];
+const ENVS=['Dev','QA','Staging','Prod'],STAGES=['OAS','Data Models','Sandbox','Docuwiz','SCM'];
+const FAIL=['Insufficient traffic to infer schema','Data model conflict: type mismatch on 2 fields','Sandbox provisioning timeout','Docuwiz push failed: 502 from upstream','SCM push rejected: branch protected'];
+function gen(kind,n,seed){const r=rng(seed),pick=a=>a[Math.floor(r()*a.length)],out=[];
+ for(let i=0;i<n;i++){
+  const a=r(),res=a<.7?'REST':a<.85?'GraphQL':'SOAP',b=r(),src=b<.7?'Microservice':b<.9?'Gateway':'Builder',svc=pick(SVC);
+  let method,ep;
+  if(res==='GraphQL'){method='POST';ep=`/${svc}/graphql`}else if(res==='SOAP'){method='POST';ep=`/ws/${svc}Service`}
+  else{method=pick(M);ep=`/${svc}/${pick(PATHS)}${r()<.4?'/{id}':''}`}
+  const x=r(),o=kind==='shadow'?(x<.72?'Processed':x<.82?'Failed':x<.92?'Skipped':'Detected'):(x<.75?'Processed':x<.88?'Failed':'Detected');
+  const p=[0,0,0,0,0].map(()=>Math.round(r()*r()*70));
+  out.push({id:kind+i,kind,method,ep,res,src,svc:svc+'-svc',env:pick(ENVS),code:pick([200,200,201,204,400,404,500]),
+   run:Math.min(7,Math.floor(r()*8*(.6+.5*r()))+(r()<.3?1:0)),outcome:o,failAt:Math.floor(r()*5),
+   parts:p,drift:Math.round(p.reduce((s,v)=>s+v,0)/5),
+   opId:method.toLowerCase()+ep.replace(/[^a-z0-9]+(.)/gi,(m,c)=>c.toUpperCase()).replace(/[^a-z0-9]/gi,''),
+   name:svc[0].toUpperCase()+svc.slice(1)+' '+(res==='REST'?pick(PATHS):res)});
+ }return out}
+const DATA={shadow:gen('shadow',260,7),drift:gen('drift',140,11)};
+
+// ---------- state & derived ----------
+const S={tab:'overview',env:'All',run:7,view:'detected',bd:'detected',thr:15,f:{},hide:{},sel:null,tips:[]};
+const COL={shadow:'#6366f1',drift:'#f59e0b',detected:'#6366f1',processed:'#10b981'};
+const status=r=>r.kind==='drift'&&r.drift<S.thr?'Skipped':r.outcome;
+const stages=r=>{const s=status(r);return STAGES.map((_,i)=>s==='Processed'||(s==='Failed'&&i<r.failAt))};
+const reason=r=>status(r)==='Failed'?FAIL[r.failAt]:status(r)==='Skipped'?(r.kind==='drift'?`Drift ${r.drift}% is below threshold ${S.thr}%`:'Unsupported / excluded by policy'):'—';
+const byEnv=k=>DATA[k].filter(r=>S.env==='All'||r.env===S.env);
+const count=(a,fn)=>a.filter(fn).length;
+const pct=(n,t)=>t?Math.round(n/t*100):0;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tip=h=>{S.tips.push(h);return S.tips.length-1};
+
+// ---------- components ----------
+const card=(l,n,o={})=>`<div class="card ${o.act?'click':''} ${o.on?'on':''}" ${o.act?`data-act="${o.act}" data-v="${o.v??''}"`:''}><div class="l">${l}</div>${o.sub?`<div class="sub">${o.sub}</div>`:`<div class="n">${n}</div>`}</div>`;
+function breakdown(rows,filterable){
+  const tot=rows.length||1,sel=S.f;
+  const grp=(key,names)=>names.map(nm=>({nm,n:count(rows,r=>r[key]===nm)}));
+  const R=grp('res',['REST','GraphQL','SOAP']),Sx=grp('src',['Microservice','Gateway','Builder']),cols=['#6366f1','#f59e0b','#10b981'];
+  let off=0;const C=2*Math.PI*40;
+  const arcs=R.map((d,i)=>{const len=d.n/tot*C,s=`<circle r="40" cx="60" cy="60" fill="none" stroke="${cols[i]}" stroke-width="22" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)" opacity="${sel.res&&sel.res!==d.nm?.3:1}" ${filterable?`data-act="f" data-k="res" data-v="${d.nm}" style="cursor:pointer"`:''} data-tip="${tip(`${d.nm}: ${d.n} (${pct(d.n,tot)}%)`)}"/>`;off+=len;return s}).join('');
+  return `<div class="split"><div><div class="note">By resource type</div><div style="display:flex;gap:16px;align-items:center">
+   <svg width="130" height="130" viewBox="0 0 120 120">${arcs}<text x="60" y="58" text-anchor="middle" font-size="16" font-weight="600">${rows.length}</text><text x="60" y="72" text-anchor="middle" font-size="9" fill="#666">total</text></svg>
+   <div>${R.map((d,i)=>`<div class="bar ${filterable?'c':''} ${sel.res&&sel.res!==d.nm?'dim':''}" ${filterable?`data-act="f" data-k="res" data-v="${d.nm}"`:''}><i style="width:10px;height:10px;background:${cols[i]};display:inline-block"></i><span style="width:70px">${d.nm}</span><b>${d.n}</b>&nbsp;<span class="note">${pct(d.n,tot)}%</span></div>`).join('')}</div></div></div>
+   <div><div class="note">By source type</div>${Sx.map(d=>`<div class="bar ${filterable?'c':''} ${sel.src&&sel.src!==d.nm?'dim':''}" ${filterable?`data-act="f" data-k="src" data-v="${d.nm}"`:''} data-tip="${tip(`${d.nm}: ${d.n} (${pct(d.n,tot)}%)`)}"><span class="t">${d.nm}</span><div class="tr"><div class="f" style="width:${pct(d.n,tot)}%"></div></div><b>${d.n}</b><span class="note">${pct(d.n,tot)}%</span></div>`).join('')}</div></div>`;
+}
+// grouped 2-bar chart. data:[{label,v:[a,b],tip}]
+function bars(id,data,names,colors,selI,act){
+  const W=760,H=230,L=36,B=26,T=14,hide=S.hide[id]||[false,false];
+  const max=Math.max(1,...data.flatMap(d=>d.v.filter((_,k)=>!hide[k]))),step=Math.max(1,Math.ceil(max/4)),top=step*4;
+  const gw=(W-L)/data.length,bw=Math.min(26,gw*.3),y=v=>T+(H-T-B)*(1-v/top);
+  let g='';for(let t=0;t<=4;t++)g+=`<line x1="${L}" x2="${W}" y1="${y(t*step)}" y2="${y(t*step)}" stroke="#eee"/><text x="${L-6}" y="${y(t*step)+4}" text-anchor="end" font-size="10" fill="#777">${t*step}</text>`;
+  data.forEach((d,i)=>{const x0=L+i*gw,tp=tip(d.tip);
+    g+=`<rect class="hit" x="${x0}" y="${T}" width="${gw}" height="${H-T-B}" data-act="${act}" data-i="${i}" data-s="-1" data-tip="${tp}"/>`;
+    if(i===selI)g+=`<rect x="${x0}" y="${T}" width="${gw}" height="${H-T-B}" fill="#4f46e5" opacity=".08" pointer-events="none"/>`;
+    d.v.forEach((v,k)=>{if(hide[k])return;const bx=x0+gw/2+(k?2:-bw-2),by=y(v);
+      g+=`<rect x="${bx}" y="${by}" width="${bw}" height="${H-B-by}" fill="${colors[k]}" rx="2" style="cursor:pointer" data-act="${act}" data-i="${i}" data-s="${k}" data-tip="${tp}"/><text x="${bx+bw/2}" y="${by-3}" text-anchor="middle" font-size="9" fill="#555" pointer-events="none">${v}</text>`});
+    g+=`<text x="${x0+gw/2}" y="${H-8}" text-anchor="middle" font-size="10" fill="${i===selI?'#4f46e5':'#666'}" font-weight="${i===selI?700:400}" pointer-events="none">${d.label}</text>`});
+  return `<div class="lg">${names.map((n,k)=>`<button class="${hide[k]?'off':''}" data-act="leg" data-id="${id}" data-k="${k}"><i style="background:${colors[k]}"></i>${n}</button>`).join('')}<span class="note" style="margin-left:auto">click a bar → open that run below</span></div><svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
+}
+const avgParts=rs=>[0,1,2,3,4].map(i=>rs.length?Math.round(rs.reduce((s,r)=>s+r.parts[i],0)/rs.length):0);
+const PN=['Request headers','Query params','Request body','Response body','Response headers'];
+
+// ---------- pages ----------
+function overview(){
+  const sh=byEnv('shadow'),dr=byEnv('drift'),proc=(a,i)=>count(a,r=>stages(r)[i]);
+  const sub=(a,b)=>`<span>Created <b>${a}</b></span><span>Updated <b>${b}</b></span>`;
+  const trend=RUNS.map((r,i)=>{const a=count(sh,x=>x.run===i),b=count(dr,x=>x.run===i);return{label:r.short,v:[a,b],tip:`<b>${r.label}</b><br>Shadow detected: ${a}<br>Drift detected: ${b}`}});
+  const oS=proc(sh,0),oD=proc(dr,0);
+  const cu=(l,i,child)=>`<div class="${child?'':'card'}" style="${child?'flex:1;border:1px solid #e3e3e3;border-radius:6px;padding:8px 10px':'flex:1'}"><div class="l">${child?'↳ ':''}${l}</div><div class="sub"><span>Created <b>${proc(sh,i)}</b>${child?` <span class="note">${pct(proc(sh,i),oS)}% of OAS</span>`:''}</span><span>Updated <b>${proc(dr,i)}</b>${child?` <span class="note">${pct(proc(dr,i),oD)}% of OAS</span>`:''}</span></div></div>`;
+  return `<h2>Pipeline output · all runs</h2><div class="row" style="align-items:stretch">
+  ${card('Shadow APIs',sh.length,{act:'go',v:'shadow'})}${card('API Drifts',dr.length,{act:'go',v:'drift'})}
+  <div class="card" style="flex:3"><div class="l">OAS</div><div class="sub" style="margin-bottom:8px"><span>Created <b>${oS}</b></span><span>Updated <b>${oD}</b></span></div>
+   <div class="row">${cu('Data Models',1,1)}${cu('Sandbox',2,1)}</div></div>
+  <div class="card"><div class="l">Docuwiz Push</div><div class="sub"><span>Guides created <b>${proc(sh,3)}</b></span><span>New revisions <b>${proc(dr,3)}</b></span></div></div>
+  <div class="card"><div class="l">SCM Push</div><div class="sub"><span>Created <b>${proc(sh,4)}</b></span><span>Updated <b>${proc(dr,4)}</b></span></div></div></div>
+    <h2>APIs discovered breakdown</h2><div class="panel">${breakdown([...sh,...dr],false)}</div>
+  <h2>Shadow vs drift · detected per run</h2><div class="panel">${bars('ov',trend,['Shadow','Drift'],[COL.shadow,COL.drift],null,'ovbar')}</div>`;
+}
+function feature(k){
+  const D=k==='drift',all=byEnv(k),isP=r=>status(r)==='Processed';
+  const bdRows=S.bd==='processed'?all.filter(isP):all;
+  const trend=RUNS.map((r,i)=>{const a=all.filter(x=>x.run===i),p=count(a,isP);
+    let t=`<b>${r.label}</b><br>Detected: ${a.length}<br>Processed: ${p}`;
+    if(D){const ps=avgParts(a);t+=`<hr style="border:0;border-top:1px solid #666"><b>Avg drift: ${Math.round(a.reduce((s,x)=>s+x.drift,0)/(a.length||1))}%</b>`+PN.map((n,j)=>`<br>${n}: ${ps[j]}%`).join('')}
+    return{label:r.short,v:[a.length,p],tip:t}});
+  const f=S.f,runRows=all.filter(r=>r.run===S.run);
+  let rows=runRows.filter(r=>(!f.res||r.res===f.res)&&(!f.src||r.src===f.src)&&(!f.method||r.method===f.method)&&(!f.status||status(r)===f.status)&&(f.stage==null||stages(r)[f.stage]));
+  const chips=['res','src','method','status'].filter(x=>f[x]).map(x=>`<span class="chip" data-act="f" data-k="${x}" data-v="${f[x]}">${x}: ${f[x]} ✕</span>`).join('')+(f.stage!=null?`<span class="chip" data-act="stage" data-v="${f.stage}">stage: ${STAGES[f.stage]} ✕</span>`:'');
+  const ids=[...new Set(runRows.map(r=>r.method+r.ep+r.env))].length,swag=new Set(runRows.map(r=>r.svc)).size;
+  const above=count(runRows,r=>r.drift>=S.thr),below=runRows.length-above;
+  const nA=count(all,r=>stages(r)[0]);
+  const st=(i,l,hint)=>{const n=count(all,r=>stages(r)[i]),c=i>0;return `<div class="card click ${f.stage===i?'on':''}" data-act="stage-top" data-v="${i}"><div class="l">${l}</div><div class="n">${n}</div><div class="note">${hint||(c?pct(n,nA)+'% of OAS':pct(n,all.length)+'% of detected')}</div><div class="tr" style="height:6px;background:#eee;border-radius:3px;margin-top:4px"><div style="height:100%;width:${c?pct(n,nA):pct(n,all.length)}%;background:${c?'#a5b4fc':COL.processed};border-radius:3px"></div></div></div>`};
+  const grp=(t,inner)=>`<div style="flex:1;border:1px dashed #bbb;border-radius:8px;padding:8px"><div class="note" style="margin-bottom:6px">${t}</div><div class="row">${inner}</div></div>`;
+  const pipe=`<div class="row" style="align-items:stretch">${card(D?'Drift APIs':'Shadow APIs',all.length,{act:'stage-top',v:'',on:f.stage==null})}
+   ${grp('OAS & artifacts generated from it',st(0,D?'OAS Updated':'OAS Created')+st(1,'↳ Data Models')+st(2,'↳ Sandbox'))}
+   ${grp('Published from OAS',st(3,D?'Docuwiz: new guide revision':'Docuwiz: guide created')+st(4,'SCM Push'))}</div>`;
+  const sel=(key,opts)=>`<select data-act="fsel" data-k="${key}"><option value="">${key==='res'?'Resource type':key==='src'?'Source':key==='method'?'Method':'Status'}: all</option>${opts.map(o=>`<option ${f[key]===o?'selected':''}>${o}</option>`).join('')}</select>`;
+  const cols=`<th>Method<th>Endpoint<th>Resource<th>Env<th>Source<th>Service<th>Code`+(D?'<th>% Drift':'');
+  const tr=rows.map(r=>{const st=status(r),sg=stages(r);
+    const base=`<td>${r.method}<td class="ep" data-act="row" data-v="${r.id}">${esc(r.ep)}<td>${r.res}<td>${r.env}<td>${r.src}<td>${r.svc}<td>${r.code}`+(D?`<td>${r.drift}%`:'');
+    return S.view==='detected'?`<tr>${base}`:`<tr>${base}<td><span class="st ${st}">${st}</span>${sg.map(x=>`<td>${x?'☑':'☐'}`).join('')}<td>${sg[0]?'↗':''}<td>${sg[1]?'↗':''}<td>${sg[2]?'↗':''}<td>${esc(r.opId)}`}).join('');
+  const head=S.view==='detected'?cols:cols+`<th>Status<th>OAS<th>DM<th>Sandbox<th>Docuwiz<th>SCM<th>Design doc<th>Data model<th>Sandbox<th>Operation ID`;
+  return `<h2>${D?'Drift':'Shadow'} APIs · all runs</h2>${pipe}
+  <h2>Discovered breakdown <span class="seg" style="margin-left:8px">${['detected','processed'].map(v=>`<button class="${S.bd===v?'on':''}" data-act="bd" data-v="${v}">${v}</button>`).join('')}</span></h2>
+  <div class="panel">${breakdown(bdRows,true)}<div class="note" style="margin-top:6px">Click a segment or bar to filter the run table below.</div></div>
+  <h2>${D?'Drift':'Shadow'} trend · detected vs processed</h2><div class="panel">${bars('tr'+k,trend,['Detected','Processed'],[COL.detected,COL.processed],S.run,'runbar')}</div>
+  <h2>Run detail</h2>
+  <div class="tb"><select data-act="run">${RUNS.map((r,i)=>`<option value="${i}" ${i===S.run?'selected':''}>${r.label}</option>`).join('')}</select>
+   <span class="seg">${['detected','processed'].map(v=>`<button class="${S.view===v?'on':''}" data-act="view" data-v="${v}">${v[0].toUpperCase()+v.slice(1)} table</button>`).join('')}</span>
+   ${sel('res',['REST','GraphQL','SOAP'])}${sel('src',['Microservice','Gateway','Builder'])}${sel('method',['GET','POST','PUT','PATCH','DELETE'])}${S.view==='processed'?sel('status',['Detected','Processed','Skipped','Failed']):''}
+   ${D?`<label>Threshold <input type="number" min="0" max="100" value="${S.thr}" data-act="thr" style="width:56px">%</label>`:''}${chips}</div>
+  ${S.view==='detected'?`<div class="row">${card('Total unique endpoints (path + verb)',ids)}${card('Swaggers to be generated',swag)}${D?card('Threshold set',S.thr+'%')+card('Endpoints above threshold',above)+card('Below threshold (skipped)',below):''}
+    <div class="card"><div class="l">Source type breakdown</div><div class="sub">${['Microservice','Gateway','Builder'].map(s=>`<span>${s} <b>${count(runRows,r=>r.src===s)}</b></span>`).join('')}</div></div></div>`
+  :`<div class="note">Stage cards above filter this table (click to toggle). Showing ${rows.length} of ${runRows.length}.</div>`}
+  <div class="tw"><table><thead><tr>${head}</thead><tbody>${tr||`<tr><td colspan="14" class="note">No endpoints match.</td></tr>`}</tbody></table></div>
+  <div class="note" style="margin-top:6px">${rows.length} rows · click an endpoint for API details</div>`;
+}
+function drawer(){
+  const r=[...DATA.shadow,...DATA.drift].find(x=>x.id===S.sel);if(!r)return'';
+  const st=status(r),sg=stages(r);
+  return `<div id="dr"><div style="display:flex"><b style="flex:1">API details</b><span class="chip" data-act="close">close ✕</span></div>
+  <dl><dt>API name<dd>${esc(r.name)}<dt>Endpoint<dd>${r.method} ${esc(r.ep)}<dt>Operation ID<dd>${esc(r.opId)}<dt>Env · Source · Type<dd>${r.env} · ${r.src} · ${r.res}
+  <dt>Pipeline status<dd><span class="st ${st}">${st}</span><br>${STAGES.map((s,i)=>`${sg[i]?'☑':'☐'} ${s}`).join('<br>')}
+  <dt>Reason for failure / skip<dd>${esc(reason(r))}
+  ${r.kind==='drift'?`<dt>Compliance summary<dd>Drift ${r.drift}% vs threshold ${S.thr}% → ${r.drift>=S.thr?'<b>Above</b>, will be processed':'Below, skipped'}${PN.map((n,i)=>`<div class="bar"><span class="t" style="width:120px">${n}</span><div class="tr"><div class="f" style="width:${r.parts[i]}%;background:${COL.drift}"></div></div>${r.parts[i]}%</div>`).join('')}`:''}</dl></div>`;
+}
+function render(){
+  S.tips=[];
+  const T=[['overview','Overview'],['shadow','Shadow APIs'],['drift','API Drifts']];
+  $('#app').innerHTML=`<header><h1>API Governance Automation</h1>
+   <select data-act="env">${['All',...ENVS].map(e=>`<option value="${e}" ${S.env===e?'selected':''}>ENV: ${e==='All'?'All Envs':e}</option>`).join('')}</select>
+   <span class="pill">Next run: Oct 9, 2026, 2:48 AM</span><span class="pill">Settings</span></header>
+   <nav>${T.map(([k,l])=>`<button class="${S.tab===k?'on':''}" data-act="go" data-v="${k}">${l}</button>`).join('')}</nav>
+   <main>${S.tab==='overview'?overview():feature(S.tab)}</main>${drawer()}`;
+}
+const $=s=>document.querySelector(s);
+// ---------- interaction ----------
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act,v=el.dataset.v,sy=scrollY;
+  if(['fsel','run','thr','env'].includes(a))return;
+  if(a==='go'){S.tab=v;S.f={};S.sel=null}
+  else if(a==='f'){S.f[el.dataset.k]=S.f[el.dataset.k]===v?undefined:v}
+  else if(a==='stage-top'||a==='stage'){const n=v===''?null:+v;S.f.stage=S.f.stage===n?null:n;if(a==='stage-top'){S.view='processed'}}
+  else if(a==='bd')S.bd=v;
+  else if(a==='view')S.view=v;
+  else if(a==='leg'){const h=S.hide[el.dataset.id]||(S.hide[el.dataset.id]=[false,false]);const k=+el.dataset.k;if(h[1-k]&&!h[k])return;h[k]=!h[k]}
+  else if(a==='runbar'){S.run=+el.dataset.i;S.view=el.dataset.s==='1'?'processed':'detected'}
+  else if(a==='ovbar'){S.tab=el.dataset.s==='1'?'drift':'shadow';S.run=+el.dataset.i;S.f={}}
+  else if(a==='row')S.sel=v;
+  else if(a==='close')S.sel=null;
+  render();
+  if(a==='runbar'||a==='ovbar'||a==='stage-top')document.querySelector(a==='stage-top'?'.tw':'h2:last-of-type')?.scrollIntoView({block:'start'});else scrollTo(0,sy);
+});
+document.addEventListener('change',e=>{
+  const el=e.target,a=el.dataset.act;if(!a)return;
+  if(a==='env'){S.env=el.value}else if(a==='run')S.run=+el.value;
+  else if(a==='fsel')S.f[el.dataset.k]=el.value||undefined;
+  else if(a==='thr')S.thr=Math.max(0,Math.min(100,+el.value||0));
+  const sy=scrollY;render();scrollTo(0,sy);
+});
+const tipEl=()=>document.getElementById('tip');
+document.addEventListener('mousemove',e=>{const t=e.target.closest&&e.target.closest('[data-tip]'),b=tipEl();
+  if(!t){b.style.display='none';return}b.innerHTML=S.tips[+t.dataset.tip]??t.dataset.tip;b.style.display='block';
+  b.style.left=Math.min(e.clientX+14,innerWidth-270)+'px';b.style.top=(e.clientY+14)+'px'});
+render();
+</script></body></html>
